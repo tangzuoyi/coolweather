@@ -1,4 +1,4 @@
-package com.coolweather;
+package com.coolweather.android;
 
 import android.app.ProgressDialog;
 import android.os.Bundle;
@@ -9,7 +9,9 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -19,18 +21,26 @@ import com.coolweather.android.R;
 import com.coolweather.android.db.City;
 import com.coolweather.android.db.County;
 import com.coolweather.android.db.Province;
+import com.coolweather.android.util.HttpUtil;
+import com.coolweather.android.util.Utility;
 
+import org.json.JSONException;
 import org.litepal.LitePal;
 import org.litepal.crud.LitePalSupport;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.Response;
 
 public class ChooseAreaFragment extends Fragment {
     public static final int LEVEL_PROVINCE = 0;
     public static final int LEVEL_CITY = 1;
     public static final int LEVEL_COUNTY = 2;
-    private ProgressDialog processDialog;
+    private ProgressDialog progressDialog;
     private TextView titleText;
     private Button backButton;
     private ListView listView;
@@ -79,14 +89,14 @@ public class ChooseAreaFragment extends Fragment {
                 if(currentLeave == LEVEL_COUNTY){
                     queryCities();
                 } else if (currentLeave == LEVEL_CITY) {
-                    queryProviences();
+                    queryProvinces();
                 }
             }
         });
-        queryProviences();
+        queryProvinces();
     }
 
-    private void queryProviences(){
+    private void queryProvinces(){
         titleText.setText("中国");
         backButton.setVisibility(View.GONE);
         provinceList = LitePal.findAll(Province.class);
@@ -145,7 +155,64 @@ public class ChooseAreaFragment extends Fragment {
 
     private void queryFromServer(String address,final String type){
         showProgressDialog();
+        HttpUtil.sendOkHttpRequest(address, new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        closeProgressDialog();
+                        Toast.makeText(getContext(),"加载失败",Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
 
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                String responseText = response.body().string();
+                boolean result = false;
+                if("province".equals(type)){
+                    try {
+                        result = Utility.handleProvinceResponse(responseText);
+                    } catch (JSONException e) {
+                        throw new RuntimeException(e);
+                    }
+                } else if ("city".equals(responseText)) {
+                    result = Utility.handleCityResponse(responseText,selectedProvince.getId());
+                } else if ("county".equals(responseText)) {
+                    result = Utility.handleCountyResponse(responseText,selectedCity.getId());
+                }
+                if(result){
+                    getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            closeProgressDialog();
+                            if("province".equals(type)){
+                                queryProvinces();
+                            } else if ("city".equals(type)) {
+                                queryCities();
+                            } else if ("county".equals(type)) {
+                                queryCities();
+                            }
+                        }
+                    });
+                }
+            }
+        });
     }
 
+    private void showProgressDialog(){
+        if(progressDialog == null){
+            progressDialog = new ProgressDialog(getActivity());
+            progressDialog.setMessage("正在加载。。。。。");
+            progressDialog.setCanceledOnTouchOutside(false);
+        }
+        progressDialog.show();
+    }
+
+    private void closeProgressDialog(){
+        if(progressDialog!=null){
+            progressDialog.dismiss();
+        }
+    }
 }
