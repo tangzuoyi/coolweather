@@ -12,10 +12,11 @@ import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-
+//import android.support.v4.app.F;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+//import androidx.fragment.app.Fragment;
 
 import com.coolweather.android.R;
 import com.coolweather.android.db.City;
@@ -117,7 +118,7 @@ public class ChooseAreaFragment extends Fragment {
     private void queryCities(){
         titleText.setText(selectedProvince.getProvinceName());
         backButton.setVisibility(View.VISIBLE);
-        cityList = LitePal.where("province = ?",String.valueOf(selectedProvince.getId())).find(City.class);
+        cityList = LitePal.where("provinceId = ?",String.valueOf(selectedProvince.getId())).find(City.class);
         if(cityList.size()>0){
             dataList.clear();
             for (City city: cityList) {
@@ -128,7 +129,7 @@ public class ChooseAreaFragment extends Fragment {
             currentLeave = LEVEL_CITY;
         }else{
             int provinceCode = selectedProvince.getProvinceCode();
-            String address = "http://guolin.tech/api/china"+provinceCode;
+            String address = "http://guolin.tech/api/china/"+provinceCode;
             queryFromServer(address,"city");
         }
     }
@@ -136,8 +137,9 @@ public class ChooseAreaFragment extends Fragment {
     private void queryCounties(){
         titleText.setText(selectedCity.getCityName());
         backButton.setVisibility(View.VISIBLE);
-        countyList = LitePal.where("cityid=",String.valueOf(selectedCity.getId())).find(County.class);
+        countyList = LitePal.where("cityId=?",String.valueOf(selectedCity.getId())).find(County.class);
         if(countyList.size()>0){
+            dataList.clear();
             for (County county:countyList
                  ) {
                 dataList.add(county.getCountyName());
@@ -148,7 +150,7 @@ public class ChooseAreaFragment extends Fragment {
         }else {
             int provinceCode = selectedProvince.getProvinceCode();
             int cityCode = selectedCity.getCityCode();
-            String address = "http://guolin.tech/api/china"+provinceCode+"/"+cityCode;
+            String address = "http://guolin.tech/api/china/"+provinceCode+"/"+cityCode;
             queryFromServer(address,"county");
         }
     }
@@ -156,16 +158,7 @@ public class ChooseAreaFragment extends Fragment {
     private void queryFromServer(String address,final String type){
         showProgressDialog();
         HttpUtil.sendOkHttpRequest(address, new Callback() {
-            @Override
-            public void onFailure(Call call, IOException e) {
-                getActivity().runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        closeProgressDialog();
-                        Toast.makeText(getContext(),"加载失败",Toast.LENGTH_SHORT).show();
-                    }
-                });
-            }
+
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
@@ -177,9 +170,9 @@ public class ChooseAreaFragment extends Fragment {
                     } catch (JSONException e) {
                         throw new RuntimeException(e);
                     }
-                } else if ("city".equals(responseText)) {
+                } else if ("city".equals(type)) {
                     result = Utility.handleCityResponse(responseText,selectedProvince.getId());
-                } else if ("county".equals(responseText)) {
+                } else if ("county".equals(type)) {
                     result = Utility.handleCountyResponse(responseText,selectedCity.getId());
                 }
                 if(result){
@@ -192,11 +185,22 @@ public class ChooseAreaFragment extends Fragment {
                             } else if ("city".equals(type)) {
                                 queryCities();
                             } else if ("county".equals(type)) {
-                                queryCities();
+                                queryCounties();
                             }
                         }
                     });
                 }
+            }
+
+            @Override
+            public void onFailure(Call call, IOException e) {
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        closeProgressDialog();
+                        Toast.makeText(getContext(),"加载失败",Toast.LENGTH_SHORT).show();
+                    }
+                });
             }
         });
     }
