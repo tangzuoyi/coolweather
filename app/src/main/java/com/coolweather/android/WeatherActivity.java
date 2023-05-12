@@ -184,7 +184,7 @@ public class WeatherActivity extends AppCompatActivity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                       // Glide.with(WeatherActivity.this).load(bingPic).into(bingPicImg);
+                       Glide.with(WeatherActivity.this).load(bingPic).into(bingPicImg);
                     }
                 });
             }
