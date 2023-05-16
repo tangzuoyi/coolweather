@@ -1,11 +1,14 @@
 package com.coolweather.android;
 
+import static android.content.ContentValues.TAG;
+
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
@@ -21,13 +24,25 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import com.bumptech.glide.Glide;
+import com.coolweather.android.gson.Daily;
 import com.coolweather.android.gson.Forecast;
+import com.coolweather.android.gson.Qweather;
 import com.coolweather.android.gson.Weather;
 import com.coolweather.android.service.AutoUpdateService;
 import com.coolweather.android.util.HttpUtil;
 import com.coolweather.android.util.Utility;
+import com.google.gson.Gson;
+import com.qweather.sdk.bean.base.Code;
+import com.qweather.sdk.bean.base.Lang;
+import com.qweather.sdk.bean.base.Unit;
+import com.qweather.sdk.bean.history.HistoricalWeatherBean;
+import com.qweather.sdk.bean.weather.WeatherDailyBean;
+import com.qweather.sdk.bean.weather.WeatherNowBean;
+import com.qweather.sdk.view.HeConfig;
+import com.qweather.sdk.view.QWeather;
 
 import java.io.IOException;
+import java.util.List;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -77,6 +92,7 @@ public class WeatherActivity extends AppCompatActivity {
             getWindow().setStatusBarColor(Color.TRANSPARENT);
         }
         setContentView(R.layout.activity_weather);
+
         // 初始化各控件
         bingPicImg = (ImageView) findViewById(R.id.bing_pic_img);
         weatherLayout = (ScrollView) findViewById(R.id.weather_layout);
@@ -91,16 +107,17 @@ public class WeatherActivity extends AppCompatActivity {
         carWashText = (TextView) findViewById(R.id.car_wash_text);
         sportText = (TextView) findViewById(R.id.sport_text);
         swipeRefresh = (SwipeRefreshLayout) findViewById(R.id.swipe_refresh);
-        swipeRefresh.setColorSchemeResources(com.google.android.material.R.color.material_dynamic_primary0);
+        swipeRefresh.setColorSchemeResources(R.color.colorPrimary);
         drawerLayout = (DrawerLayout) findViewById(R.id.drawer_layout);
         navButton = (Button) findViewById(R.id.nav_button);
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
-        String weatherString = prefs.getString("weather", null);
+        String weatherString = prefs.getString("qweather", null);
         if (weatherString != null) {
             // 有缓存时直接解析天气数据
-            Weather weather = Utility.handleWeatherResponse(weatherString);
-            mWeatherId = weather.basic.weatherId;
-            showWeatherInfo(weather);
+            //Qweather weather = Utility.handleQWeatherResponse(weatherString);
+            //mWeatherId = weather.basic.weatherId;
+            WeatherDailyBean weatherDailyBean = new Gson().fromJson(weatherString,WeatherDailyBean.class);
+            showQWeatherInfo(weatherDailyBean);
         } else {
             // 无缓存时去服务器查询天气
             mWeatherId = getIntent().getStringExtra("weather_id");
@@ -131,7 +148,67 @@ public class WeatherActivity extends AppCompatActivity {
      * 根据天气id请求城市天气信息。
      */
     public void requestWeather(final String weatherId) {
-        String weatherUrl = "http://guolin.tech/api/weather?cityid=" + weatherId + "&key=bc0418b57b2d4918819d3974ac1285d9";
+
+        /**
+         * 实况天气数据
+         * @param location 所查询的地区，可通过该地区ID、经纬度进行查询经纬度格式：经度,纬度
+         *                 （英文,分隔，十进制格式，北纬东经为正，南纬西经为负)
+         * @param lang     (选填)多语言，可以不使用该参数，默认为简体中文
+         * @param unit     (选填)单位选择，公制（m）或英制（i），默认为公制单位
+         * @param listener 网络访问结果回调
+         */
+
+        QWeather.getWeather7D(WeatherActivity.this,"101080402",Lang.ZH_HANS, Unit.METRIC, new QWeather.OnResultWeatherDailyListener() {
+            @Override
+            public void onError(Throwable e) {
+               // Log.i(TAG, "getWeather onError: " + throwable);
+                Log.i(TAG, "getWeather onError: " + e);
+            }
+            SharedPreferences.Editor editor = PreferenceManager.getDefaultSharedPreferences(WeatherActivity.this).edit();
+            @Override
+            public void onSuccess(WeatherDailyBean weatherDailyBean) {
+                Log.i(TAG, "getWeather onSuccess: " + new Gson().toJson(weatherDailyBean));
+                //先判断返回的status是否正确，当status正确时获取数据，若status不正确，可查看status对应的Code值找到原因
+                if (Code.OK == weatherDailyBean.getCode()) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            String response =  new Gson().toJson(weatherDailyBean);
+                            //Qweather qweather = Utility.handleQWeatherResponse(response);
+                            editor.putString("qweather", new Gson().toJson(weatherDailyBean));
+                            editor.apply();
+                            showQWeatherInfo(weatherDailyBean);
+                        }
+                    });
+
+                } else {
+                    //在此查看返回数据失败的原因
+                    Code code = weatherDailyBean.getCode();
+                    Log.i(TAG, "failed code: " + code);
+                }
+            }
+        });
+        QWeather.getWeatherNow(WeatherActivity.this, "CN101280603", Lang.ZH_HANS, Unit.METRIC, new QWeather.OnResultWeatherNowListener() {
+            @Override
+            public void onError(Throwable e) {
+                Log.i(TAG, "getWeather onError: " + e);
+            }
+
+            @Override
+            public void onSuccess(WeatherNowBean weatherBean) {
+                Log.i(TAG, "getWeather onSuccess: " + new Gson().toJson(weatherBean));
+                //先判断返回的status是否正确，当status正确时获取数据，若status不正确，可查看status对应的Code值找到原因
+                if (Code.OK == weatherBean.getCode()) {
+                    WeatherNowBean.NowBaseBean now = weatherBean.getNow();
+                                } else {
+                    //在此查看返回数据失败的原因
+                    Code code = weatherBean.getCode();
+                    Log.i(TAG, "failed code: " + code);
+                }
+            }
+        });
+//**********************************************原天气获取***************************
+       /* String weatherUrl = "http://guolin.tech/api/weather?cityid=" + weatherId + "&key=330cd26333964da0aae350cbc9d827f0";
         HttpUtil.sendOkHttpRequest(weatherUrl, new Callback() {
             @Override
             public void onResponse(Call call, Response response) throws IOException {
@@ -165,7 +242,7 @@ public class WeatherActivity extends AppCompatActivity {
                     }
                 });
             }
-        });
+        });*/
         loadBingPic();
     }
 
@@ -194,6 +271,32 @@ public class WeatherActivity extends AppCompatActivity {
                 e.printStackTrace();
             }
         });
+    }
+
+
+    private void showQWeatherInfo(WeatherDailyBean weatherDailyBean){
+        String updateTime = weatherDailyBean.getBasic().getUpdateTime();
+        String degree = weatherDailyBean.getDaily().get(0).getTempMax();
+        String weatherInfo = weatherDailyBean.getDaily().get(0).getTextDay();
+        titleUpdateTime.setText(updateTime);
+        degreeText.setText(degree+"°C");
+        weatherInfoText.setText(weatherInfo);
+        forecastLayout.removeAllViews();
+        for (WeatherDailyBean.DailyBean dailyBean: weatherDailyBean.getDaily()) {
+            View view = LayoutInflater.from(this).inflate(R.layout.forecast_item, forecastLayout, false);
+            TextView dateText = (TextView) view.findViewById(R.id.date_text);
+            TextView maxText = (TextView) view.findViewById(R.id.max_text);
+            TextView minText = (TextView) view.findViewById(R.id.min_text);
+            TextView infoText = (TextView) view.findViewById(R.id.info_text);
+            infoText.setText(dailyBean.getTextDay());//天气情况
+            dateText.setText(dailyBean.getFxDate());
+            maxText.setText(dailyBean.getTempMax());
+            minText.setText(dailyBean.getTempMin());
+            forecastLayout.addView(view);
+        }
+        weatherLayout.setVisibility(View.VISIBLE);
+        Intent intent = new Intent(this, AutoUpdateService.class);
+        startService(intent);
     }
 
     /**
